@@ -2,6 +2,7 @@ mod getopts;
 pub use getopts::{Options, Matches};
 use rand::Rng;
 use std::fmt::Display;
+#[cfg(feature = "cfg_file")]
 use std::path::Path;
 use thiserror::Error;
 
@@ -369,7 +370,7 @@ fn get_from_config_file<T: AppConfig>(ac: &mut T, matches: &Matches, prog: &str)
 
 #[cfg(not(feature = "cfg_file"))]
 impl Config {
-    pub fn get_str(&self, _: &str) -> Result<Option<String>> {
+    pub fn get_str(&self, _: &str) -> Result<Option<String>, AppCfgError> {
         Ok(None)
     }
 }
