@@ -138,50 +138,6 @@ macro_rules! appconfig_define {
     };
 }
 
-#[macro_export]
-macro_rules! appglobal_define {
-    ( $mod_name:ident, $struct_name:ident, $($field:ident : $type:ty,)+ ) => {
-
-        mod $mod_name {
-            #[derive(Debug, Clone)]
-            pub struct $struct_name {
-                $(pub $field: $type,)*
-            }
-
-            impl $struct_name {
-                pub fn get() -> &'static Self {
-                    unsafe {
-                        #[cfg(debug_assertions)]
-                        if !INITED {
-                            panic!("GLOBAL_VALUE has not been initialized yet");
-                        }
-                        &*GLOBAL_VALUE.as_ptr()
-                    }
-                }
-
-                pub fn init(value: Self) -> &'static mut Self {
-                    unsafe {
-                        #[cfg(debug_assertions)]
-                        if INITED {
-                            panic!("GLOBAL_VALUE already init");
-                        }
-                        #[cfg(debug_assertions)]
-                        { INITED = true; }
-                        GLOBAL_VALUE.write(value)
-                    }
-                }
-            }
-
-            static mut GLOBAL_VALUE: std::mem::MaybeUninit<$struct_name> = std::mem::MaybeUninit::uninit();
-            #[cfg(debug_assertions)]
-            static mut INITED: bool = false;
-        }
-
-        pub use $mod_name::$struct_name;
-
-    }
-}
-
 const C_HELP: &str = "help";
 #[cfg(feature = "cfg_file")]
 const C_CONF_FILE: &str = "conf-file";
