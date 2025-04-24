@@ -1,7 +1,7 @@
 [package]
-name = "appconfig"
-version = "1.0.1"
-edition = "2021"
+name = "appcfg"
+version = "1.0.2"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["kiven <kivensoft@gmail.com>"]
 description = "A simple Unix style command line parameter and configuration file parsing library"
@@ -12,5 +12,4 @@ cfg_file = []
 chinese = []
 
 [dependencies]
-thiserror = "1.0"
-rand = "0.8"
+thiserror = "2"

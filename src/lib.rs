@@ -1,7 +1,6 @@
 mod getopts;
 pub use getopts::{Options, Matches};
-use rand::Rng;
-use std::fmt::Display;
+use std::{fmt::Display, time::SystemTime};
 #[cfg(feature = "cfg_file")]
 use std::path::Path;
 use thiserror::Error;
@@ -94,6 +93,8 @@ macro_rules! appconfig_define {
             [$short_opt:literal, $long_opt:tt, $opt_name:literal, $desc:literal]$(,)?)+ ) => {
 
         mod $mod_name {
+            use std::sync::OnceLock;
+
             #[derive(Debug, Clone)]
             pub struct $struct_name {
                 $( pub $field: $type,)*
@@ -116,32 +117,21 @@ macro_rules! appconfig_define {
             }
 
             impl $struct_name {
-                pub fn init() -> &'static mut Self {
-                    unsafe {
-                        #[cfg(debug_assertions)]
-                        if APP_CONFIG_INIT {
-                            panic!(stringify!(The $struct_name global variable has already been initialized, and reinitialization is not allowed));
-                        }
-                        #[cfg(debug_assertions)]
-                        { APP_CONFIG_INIT = true; }
-                        APP_CONFIG.write(Self::default())
-                    }
+                pub fn init(self) -> &'static Self {
+                    APP_CONFIG.set(self).unwrap();
+                    Self::get()
                 }
 
                 pub fn get() -> &'static Self {
-                    unsafe {
-                        #[cfg(debug_assertions)]
-                        if !APP_CONFIG_INIT {
-                            panic!(stringify!(The $struct_name global variable no initialized, please initialized it first))
-                        }
-                        &*APP_CONFIG.as_ptr()
+                    debug_assert!(APP_CONFIG.get().is_some());
+                    match APP_CONFIG.get() {
+                        Some(cfg) => cfg,
+                        None => unsafe { std::hint::unreachable_unchecked() }
                     }
                 }
             }
 
-            static mut APP_CONFIG: std::mem::MaybeUninit<$struct_name> = std::mem::MaybeUninit::uninit();
-            #[cfg(debug_assertions)]
-            static mut APP_CONFIG_INIT: bool = false;
+            static APP_CONFIG: OnceLock<$struct_name> = OnceLock::new();
         }
 
         pub use $mod_name::$struct_name;
@@ -214,20 +204,26 @@ pub fn print_banner(banner: &str, use_color: bool) {
     if banner.is_empty() { return; }
     if !use_color { return println!("{}", banner); }
 
-    let mut rng = rand::thread_rng();
+
+    let mut rand_idx = match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+        Ok(n) => (n.as_millis() % 7) as u8 + 1,
+        Err(_) => return,
+    };
+
     let mut text = Vec::with_capacity(512);
     let mut dyn_color: [u8; 5] = [b'\x1b', b'[', b'3', b'0', b'm'];
-    let (mut n1, mut n2) = (0, 0);
 
     for line in banner.lines() {
-        loop {
-            let i = rng.gen_range(1..8);
-            if n1 != i && n2 != i { n1 = n2; n2 = i; break }
-        }
-        dyn_color[3] = b'0' + n2;
+        dyn_color[3] = b'0' + rand_idx;
         text.extend_from_slice(&dyn_color);
         text.extend_from_slice(line.as_bytes());
         text.push(b'\n');
+
+        if rand_idx < 7 {
+            rand_idx += 1;
+        } else {
+            rand_idx = 1;
+        }
     }
 
     text.extend_from_slice(b"\x1b[0m\n");
@@ -261,7 +257,7 @@ pub fn parse_args<T: AppConfig>(app_config: &mut T, banner: &str) -> Result<bool
 /// * `app_config`: application config variable
 /// * `banner`: application banner
 /// * `f`: A user-defined callback function that checks the validity of parameters.
-/// If it returns false, this function will print the help information and return Ok(false)
+///     If it returns false, this function will print the help information and return Ok(false)
 ///
 /// Returns:
 ///
@@ -329,7 +325,7 @@ pub fn format_opt_desc<T: Display>(desc: &str, val: &T) -> String {
 
 
 fn print_usage(prog: &str, version: &str, opts: &getopts::Options) {
-    if version.len() > 0 {
+    if !version.is_empty() {
         println!("\n{}", version);
     }
     let path = std::path::Path::new(prog);
@@ -353,7 +349,7 @@ fn get_from_config_file<T: AppConfig>(ac: &mut T, matches: &Matches, prog: &str)
         }
     };
 
-    match Config::with_file(&Path::new(&conf_file)) {
+    match Config::with_file(Path::new(&conf_file)) {
         Ok(cfg) => ac.set_from_cfg(&cfg),
         Err(e) => {
             if conf_is_set {
